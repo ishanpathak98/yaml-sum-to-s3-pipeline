@@ -1,85 +1,41 @@
-#!/usr/bin/env python3
-import os
 import yaml
-import boto3
 import json
+import boto3
+import os
 from datetime import datetime
 
-def load_config():
-    """Load configuration from YAML file"""
-    if os.path.exists('config.yaml'):
-        with open('config.yaml', 'r') as file:
-            return yaml.safe_load(file)
-    return {}
+# Get environment name (dev/test/prod) and bucket from environment variables
+env_name = os.environ.get('ENV_NAME', 'dev')
+s3_bucket = os.environ.get('S3_BUCKET')
 
-def process_data(config):
-    """Process data according to config"""
-    # Example data processing
-    numbers = config.get('numbers', [1, 2, 3, 4, 5])
-    total_sum = sum(numbers)
-    
-    result = {
-        'sum': total_sum,
-        'count': len(numbers),
-        'average': total_sum / len(numbers) if numbers else 0,
-        'environment': os.environ.get('ENVIRONMENT', 'dev'),
-        'timestamp': datetime.now().isoformat()
-    }
-    
-    return result
+# Load the YAML file
+yaml_file = 'env.yaml'
+with open(yaml_file, 'r') as file:
+    all_data = yaml.safe_load(file)
 
-def save_to_s3(data, bucket_name=None, prefix=None):
-    """Save data to S3 bucket"""
-    # Use environment variable or parameter
-    bucket = bucket_name or os.environ.get('S3_BUCKET')
-    env = os.environ.get('ENVIRONMENT', 'dev')
-    
-    if not bucket:
-        print("No S3 bucket specified. Saving locally instead.")
-        os.makedirs('output', exist_ok=True)
-        with open('output/result.json', 'w') as f:
-            json.dump(data, f, indent=2)
-        return
-    
-    # Create S3 client
-    s3 = boto3.client('s3')
-    
-    # Convert data to JSON
-    json_data = json.dumps(data, indent=2)
-    
-    # Define S3 key with environment prefix
-    key = f"{env}/result-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
-    if prefix:
-        key = f"{prefix}/{key}"
-    
-    # Upload to S3
-    s3.put_object(
-        Bucket=bucket,
-        Key=key,
-        Body=json_data,
-        ContentType='application/json'
-    )
-    
-    print(f"Data uploaded to s3://{bucket}/{key}")
+# Ensure the environment exists in the YAML
+if env_name not in all_data:
+    raise ValueError(f"❌ Environment '{env_name}' not found in {yaml_file}")
 
-def main():
-    # Load configuration
-    config = load_config()
-    
-    # Process data
-    result = process_data(config)
-    
-    # Create output directory
-    os.makedirs('output', exist_ok=True)
-    
-    # Save locally
-    with open('output/result.json', 'w') as f:
-        json.dump(result, f, indent=2)
-    
-    # Save to S3 if bucket is specified
-    bucket_name = os.environ.get('S3_BUCKET')
-    if bucket_name:
-        save_to_s3(result, bucket_name)
+# Extract values
+env_data = all_data[env_name]
+total = sum(env_data.values())
 
-if __name__ == "__main__":
-    main()
+# Prepare result
+timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+result = {
+    'timestamp': timestamp,
+    'environment': env_name,
+    'values': env_data,
+    'sum': total
+}
+
+# Save to a local JSON file
+filename = f'result-{env_name}-{timestamp}.json'
+with open(filename, 'w') as f:
+    json.dump(result, f, indent=2)
+
+# Upload to S3
+s3 = boto3.client('s3')
+s3.upload_file(filename, s3_bucket, f'{env_name}/{filename}')
+print(f'✅ Uploaded to s3://{s3_bucket}/{env_name}/{filename}')
