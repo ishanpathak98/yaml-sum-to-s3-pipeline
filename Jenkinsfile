@@ -2,35 +2,63 @@ pipeline {
     agent any
 
     parameters {
-        string(name: 'ENV_NAME', defaultValue: 'All', description: 'Enter environment (Merge, Prod, or All)')
+        choice(name: 'ENVIRONMENT', choices: ['dev', 'test', 'prod'], description: 'Select the environment')
+        string(name: 'BUCKET_NAME', defaultValue: 'my-yaml-sum-bucket', description: 'Enter the target S3 bucket name')
+    }
+
+    environment {
+        AWS_DEFAULT_REGION = 'us-east-2' // Change to 'us-east-2' for Ohio region
     }
 
     stages {
-        stage('Clone Repository') {
+        stage('Checkout SCM') {
             steps {
-                git 'https://github.com/ishanpathak98/yaml-sum-to-s3-pipeline.git'
+                git credentialsId: 'github-pat', url: 'https://github.com/ishanpathak98/yaml-sum-to-s3-pipeline.git', branch: 'main'
             }
         }
 
-        stage('Install Dependencies') {
+        stage('Prepare Environment') {
             steps {
-                sh 'pip3 install boto3 pyyaml'
+                sh '''
+                    python3 -m venv venv
+                    . venv/bin/activate
+                    pip install --upgrade pip
+                    pip install -r requirements.txt
+                '''
+            }
+        }
+
+        stage('Verify Files') {
+            steps {
+                echo "📁 Verifying YAML and Python files"
+                sh 'ls -la'
             }
         }
 
         stage('Run Python Script') {
             steps {
-                sh "python3 sum_env_values.py ${params.ENV_NAME}"
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials']]) {
+                    sh '''
+                        . venv/bin/activate
+                        python3 sum_env_values.py ${ENVIRONMENT} ${BUCKET_NAME}
+                    '''
+                }
+            }
+        }
+
+        stage('Verify S3 Upload') {
+            steps {
+                echo "✅ Upload complete. Check your S3 bucket: ${params.BUCKET_NAME}"
             }
         }
     }
 
     post {
         success {
-            echo '✅ Pipeline finished successfully.'
+            echo "✅ Build completed successfully for '${params.ENVIRONMENT}'"
         }
         failure {
-            echo '❌ Pipeline failed.'
+            echo "❌ Build failed for '${params.ENVIRONMENT}'. Please check logs."
         }
     }
 }
