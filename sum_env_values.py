@@ -1,45 +1,46 @@
-import sys
 import yaml
-import json
 import boto3
-import os
-from datetime import datetime
+import sys
 
-# Get environment name (dev/test/prod) and bucket from environment variables or passed arguments
-env_name = sys.argv[1] if len(sys.argv) > 1 else 'dev'
-s3_bucket = sys.argv[2] if len(sys.argv) > 2 else os.environ.get('S3_BUCKET')
+# Get the environment name and bucket name from the arguments
+if len(sys.argv) != 3:
+    raise ValueError("❌ Missing required arguments. Usage: python sum_env_values.py <env_name> <s3_bucket_name>")
 
-if not s3_bucket:
-    raise ValueError("❌ S3 bucket name not provided or found in environment variables")
+env_name = sys.argv[1]
+s3_bucket = sys.argv[2]
+yaml_file = 'env.yaml'  # Ensure the YAML file is in the same directory as this script
 
 # Load the YAML file
-yaml_file = 'env.yaml'
 with open(yaml_file, 'r') as file:
-    all_data = yaml.safe_load(file)
+    data = yaml.safe_load(file)
 
-# Ensure the environment exists in the YAML
-if env_name not in all_data:
+# Debugging: print the loaded YAML content
+print("Loaded YAML content:")
+print(data)
+
+# Ensure the 'env' key exists in the YAML
+if 'env' not in data:
+    raise ValueError(f"❌ The 'env' section is missing in {yaml_file}")
+
+# Check if the requested environment exists under 'env'
+if env_name not in data['env']:
     raise ValueError(f"❌ Environment '{env_name}' not found in {yaml_file}")
 
-# Extract values
-env_data = all_data[env_name]
-total = sum(env_data.values())
+# Get the environment value
+env_value = data['env'][env_name]
+print(f"Environment '{env_name}' found with value: {env_value}")
 
-# Prepare result
-timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
-result = {
-    'timestamp': timestamp,
-    'environment': env_name,
-    'values': env_data,
-    'sum': total
-}
-
-# Save to a local JSON file
-filename = f'result-{env_name}-{timestamp}.json'
-with open(filename, 'w') as f:
-    json.dump(result, f, indent=2)
-
-# Upload to S3
+# Upload the environment value to S3
 s3 = boto3.client('s3')
-s3.upload_file(filename, s3_bucket, f'{env_name}/{filename}')
-print(f'✅ Uploaded to s3://{s3_bucket}/{env_name}/{filename}')
+
+filename = f'{env_name}_value.txt'
+with open(filename, 'w') as file:
+    file.write(f"Environment: {env_name}\nValue: {env_value}\n")
+
+# Upload the file to the specified S3 bucket
+try:
+    print(f"Uploading '{filename}' to S3 bucket '{s3_bucket}'...")
+    s3.upload_file(filename, s3_bucket, f'{env_name}/{filename}')
+    print(f"✅ File uploaded successfully to S3 bucket '{s3_bucket}'")
+except Exception as e:
+    print(f"❌ Failed to upload file to S3: {str(e)}")
