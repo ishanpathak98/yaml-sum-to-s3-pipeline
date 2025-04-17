@@ -1,6 +1,10 @@
 pipeline {
     agent any
 
+    parameters {
+        string(name: 'ENV_NAME', defaultValue: 'All', description: 'Enter environment (Merge, Prod, or All)')
+    }
+
     stages {
         stage('Clone Repository') {
             steps {
@@ -16,14 +20,14 @@ pipeline {
 
         stage('Run Python Script') {
             steps {
-                sh 'python3 sum_env_values.py'
+                sh "python3 sum_env_values.py ${params.ENV_NAME}"
             }
         }
     }
 
     post {
         success {
-            echo '✅ Pipeline completed successfully!'
+            echo '✅ Pipeline finished successfully.'
         }
         failure {
             echo '❌ Pipeline failed.'
