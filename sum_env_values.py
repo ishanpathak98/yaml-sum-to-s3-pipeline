@@ -1,5 +1,4 @@
 import yaml
-import json
 import boto3
 import os
 from datetime import datetime
@@ -14,26 +13,26 @@ with open(yaml_file, 'r') as file:
     all_data = yaml.safe_load(file)
 
 # Ensure the environment exists in the YAML
-if env_name not in all_data:
+if env_name not in all_data['env']:
     raise ValueError(f"❌ Environment '{env_name}' not found in {yaml_file}")
 
 # Extract values
-env_data = all_data[env_name]
-total = sum(env_data.values())
+env_data = all_data['env'][env_name]
+# Split the string into individual numbers, convert to integers and sum them
+values = list(map(int, env_data.split('_')))
+total = sum(values)
 
 # Prepare result
 timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
-result = {
-    'timestamp': timestamp,
-    'environment': env_name,
-    'values': env_data,
-    'sum': total
-}
+result = f"Timestamp: {timestamp}\n" \
+         f"Environment: {env_name}\n" \
+         f"Values: {env_data}\n" \
+         f"Sum: {total}\n"
 
-# Save to a local JSON file
-filename = f'result-{env_name}-{timestamp}.json'
+# Save to a local .txt file
+filename = f'result-{env_name}-{timestamp}.txt'
 with open(filename, 'w') as f:
-    json.dump(result, f, indent=2)
+    f.write(result)
 
 # Upload to S3
 s3 = boto3.client('s3')
